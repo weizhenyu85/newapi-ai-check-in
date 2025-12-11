@@ -134,6 +134,22 @@ class AppConfig:
                 aliyun_captcha=True,
                 bypass_method=None,
             ),
+             "wong": ProviderConfig(
+                name="wong",
+                origin="https://wzw.de5.net",
+                login_path="/login",
+                status_path="/api/status",
+                auth_state_path="/api/oauth/state",
+                sign_in_path="/api/user/checkin",
+                user_info_path="/api/user/self",
+                api_user_key="new-api-user",
+                github_client_id=None,
+                github_auth_path=None,
+                linuxdo_client_id="dnJe0SrrGDT8dh4hkbl2bo9R7SQx5If5",
+                linuxdo_auth_path="/api/oauth/linuxdo",
+                aliyun_captcha=False,
+                bypass_method=None,
+            ),
         }
 
         # 尝试从环境变量加载自定义 providers
