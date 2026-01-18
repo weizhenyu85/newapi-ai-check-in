@@ -95,6 +95,7 @@ jobs:
     - name: 执行阅读帖子
       env:
         ACCOUNTS: ${{ secrets.ACCOUNTS_LINUX_DO }}
+        PROXY: ${{ secrets.PROXY }}
         LINUXDO_BASE_TOPIC_ID: ${{ secrets.LINUXDO_BASE_TOPIC_ID }}
         DINGDING_WEBHOOK: ${{ secrets.DINGDING_WEBHOOK }}
         EMAIL_USER: ${{ secrets.EMAIL_USER }}
@@ -105,6 +106,8 @@ jobs:
         SERVERPUSHKEY: ${{ secrets.SERVERPUSHKEY }}
         FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
         WEIXIN_WEBHOOK: ${{ secrets.WEIXIN_WEBHOOK }}
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       run: |
         # 列出 linuxdo_reads 目录文件
         if (Test-Path "linuxdo_reads") {

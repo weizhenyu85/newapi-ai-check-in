@@ -23,20 +23,22 @@ class GitHubSignIn:
         provider_config: ProviderConfig,
         username: str,
         password: str,
+        proxy: dict | None = None,
     ):
         """初始化
 
         Args:
             account_name: 账号名称
             provider_config: 提供商配置
-            proxy_conf
             username: GitHub 用户名
             password: GitHub 密码
+            proxy: 代理配置，格式: {"server": "http://user:pass@proxy.com:8080"}
         """
         self.account_name = account_name
         self.provider_config = provider_config
         self.username = username
         self.password = password
+        self.proxy = proxy
 
     async def signin(
         self,
@@ -80,7 +82,12 @@ class GitHubSignIn:
             else:
                 print(f"ℹ️ {self.account_name}: No cache file found, starting fresh")
 
-            context = await browser.new_context(storage_state=storage_state)
+            # 配置代理
+            if self.proxy:
+                print(f"ℹ️ {self.account_name}: Using proxy: {self.proxy.get('server', 'unknown')}")
+                context = await browser.new_context(storage_state=storage_state, proxy=self.proxy)
+            else:
+                context = await browser.new_context(storage_state=storage_state)
 
             # 设置从 auth_state 获取的 session cookies 到页面上下文
             if auth_cookies:

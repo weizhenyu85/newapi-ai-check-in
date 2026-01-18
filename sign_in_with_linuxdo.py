@@ -22,6 +22,7 @@ class LinuxDoSignIn:
         provider_config: ProviderConfig,
         username: str,
         password: str,
+        proxy: dict | None = None,
     ):
         """初始化
 
@@ -30,11 +31,13 @@ class LinuxDoSignIn:
             provider_config: 提供商配置
             username: Linux.do 用户名
             password: Linux.do 密码
+            proxy: 代理配置，格式: {"server": "http://user:pass@proxy.com:8080"}
         """
         self.account_name = account_name
         self.provider_config = provider_config
         self.username = username
         self.password = password
+        self.proxy = proxy
 
     async def signin(
         self,
@@ -79,7 +82,12 @@ class LinuxDoSignIn:
             else:
                 print(f"ℹ️ {self.account_name}: No cache file found, starting fresh")
 
-            context = await browser.new_context(storage_state=storage_state)
+            # 配置代理
+            if self.proxy:
+                print(f"ℹ️ {self.account_name}: Using proxy: {self.proxy.get('server', 'unknown')}")
+                context = await browser.new_context(storage_state=storage_state, proxy=self.proxy)
+            else:
+                context = await browser.new_context(storage_state=storage_state)
 
             # 设置从参数获取的 auth cookies 到页面上下文
             if auth_cookies:

@@ -194,6 +194,7 @@ class OAuthAccountConfig:
     """OAuth 账号配置（用于 linux.do 和 github）"""
     username: str
     password: str
+    proxy: dict | None = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "OAuthAccountConfig":
@@ -201,6 +202,7 @@ class OAuthAccountConfig:
         return cls(
             username=data.get("username", ""),
             password=data.get("password", ""),
+            proxy=data.get("proxy"),
         )
 
 

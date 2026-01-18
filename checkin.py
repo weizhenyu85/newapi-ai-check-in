@@ -1099,11 +1099,17 @@ class CheckIn:
 
             from sign_in_with_github import GitHubSignIn
 
+            # 获取当前使用的代理配置
+            current_proxy = None
+            if self.http_proxy_config:
+                current_proxy = {"server": self.http_proxy_config}
+
             github = GitHubSignIn(
                 account_name=self.account_name,
                 provider_config=self.provider_config,
                 username=username,
                 password=password,
+                proxy=current_proxy,
             )
 
             success, result_data, oauth_browser_headers = await github.signin(
@@ -1262,11 +1268,17 @@ class CheckIn:
 
             from sign_in_with_linuxdo import LinuxDoSignIn
 
+            # 获取当前使用的代理配置
+            current_proxy = None
+            if self.http_proxy_config:
+                current_proxy = {"server": self.http_proxy_config}
+
             linuxdo = LinuxDoSignIn(
                 account_name=self.account_name,
                 provider_config=self.provider_config,
                 username=username,
                 password=password,
+                proxy=current_proxy,
             )
 
             success, result_data, oauth_browser_headers = await linuxdo.signin(
@@ -1487,10 +1499,20 @@ class CheckIn:
                         print(f"❌ {self.account_name}: Incomplete GitHub account information")
                         results.append((account_label, False, {"error": "Incomplete GitHub account information"}))
                     else:
+                        # 如果 OAuth 账号配置了代理，临时切换代理
+                        original_proxy = self.http_proxy_config
+                        if github_account.proxy:
+                            print(f"ℹ️ {self.account_name}: Using OAuth account proxy: {github_account.proxy.get('server', 'unknown')}")
+                            self.http_proxy_config = github_account.proxy.get('server')
+
                         # 使用 GitHub 账号执行签到，传入公用请求头
                         success, user_info = await self.check_in_with_github(
                             username, password, bypass_cookies, common_headers
                         )
+
+                        # 恢复原始代理
+                        self.http_proxy_config = original_proxy
+
                         if success:
                             print(f"✅ {self.account_name}: GitHub authentication successful ({github_account.username})")
                             results.append((account_label, True, user_info))
@@ -1513,6 +1535,12 @@ class CheckIn:
                         print(f"❌ {self.account_name}: Incomplete Linux.do account information")
                         results.append((account_label, False, {"error": "Incomplete Linux.do account information"}))
                     else:
+                        # 如果 OAuth 账号配置了代理，临时切换代理
+                        original_proxy = self.http_proxy_config
+                        if linuxdo_account.proxy:
+                            print(f"ℹ️ {self.account_name}: Using OAuth account proxy: {linuxdo_account.proxy.get('server', 'unknown')}")
+                            self.http_proxy_config = linuxdo_account.proxy.get('server')
+
                         # 使用 Linux.do 账号执行签到，传入公用请求头
                         success, user_info = await self.check_in_with_linuxdo(
                             username,
@@ -1520,6 +1548,10 @@ class CheckIn:
                             bypass_cookies,
                             common_headers,
                         )
+
+                        # 恢复原始代理
+                        self.http_proxy_config = original_proxy
+
                         if success:
                             print(f"✅ {self.account_name}: Linux.do authentication successful ({linuxdo_account.username})")
                             results.append((account_label, True, user_info))

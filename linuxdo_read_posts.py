@@ -33,6 +33,7 @@ class LinuxDoReadPosts:
         username: str,
         password: str,
         storage_state_dir: str = DEFAULT_STORAGE_STATE_DIR,
+        proxy: dict | None = None,
     ):
         """初始化
 
@@ -40,10 +41,12 @@ class LinuxDoReadPosts:
             username: Linux.do 用户名
             password: Linux.do 密码
             storage_state_dir: 缓存目录，默认与 checkin.py 共享
+            proxy: 代理配置，格式: {"server": "http://user:pass@proxy.com:8080"}
         """
         self.username = username
         self.password = password
         self.storage_state_dir = storage_state_dir
+        self.proxy = proxy
         # 使用用户名哈希生成缓存文件名，与 checkin.py 保持一致
         self.username_hash = hashlib.sha256(username.encode("utf-8")).hexdigest()[:8]
 
@@ -360,7 +363,13 @@ class LinuxDoReadPosts:
             else:
                 print(f"ℹ️ {self.username}: No cache file found, starting fresh")
 
-            context = await browser.new_context(storage_state=storage_state)
+            # 配置代理
+            if self.proxy:
+                print(f"ℹ️ {self.username}: Using proxy: {self.proxy.get('server', 'unknown')}")
+                context = await browser.new_context(storage_state=storage_state, proxy=self.proxy)
+            else:
+                print(f"ℹ️ {self.username}: No proxy configured, using direct connection")
+                context = await browser.new_context(storage_state=storage_state)
             page = await context.new_page()
 
             try:
@@ -469,6 +478,21 @@ async def main():
 
     print(f"ℹ️ Found {len(accounts)} account(s) with linux.do configuration")
 
+    # 加载全局代理配置
+    global_proxy = None
+    proxy_str = os.getenv("PROXY")
+    if proxy_str:
+        try:
+            # 尝试解析为 JSON
+            global_proxy = json.loads(proxy_str)
+            print(f"⚙️ Global proxy loaded from PROXY environment variable (dict format)")
+        except json.JSONDecodeError:
+            # 如果不是 JSON，则视为字符串
+            global_proxy = {"server": proxy_str}
+            print(f"⚙️ Global proxy loaded from PROXY environment variable: {proxy_str}")
+    else:
+        print(f"ℹ️ No global proxy configured")
+
     # 收集结果用于通知
     results = []
 
@@ -479,9 +503,13 @@ async def main():
         print(f"{'='*50}")
 
         try:
+            # 获取账号级代理或使用全局代理
+            account_proxy = account.get("proxy", global_proxy)
+
             reader = LinuxDoReadPosts(
                 username=account["username"],
                 password=account["password"],
+                proxy=account_proxy,
             )
 
             start_time = datetime.now()
