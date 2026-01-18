@@ -1,17 +1,15 @@
-name: newapi.ai 自动签到
+name: Linux.do 自动阅读帖子
 on:
   schedule:
-    - cron: '20 */8 * * *'
+    # UTC 时间，北京时间 9、14、20 点执行
+    # UTC 01:00 = 北京 09:00
+    # UTC 06:00 = 北京 14:00
+    # UTC 12:00 = 北京 20:00
+    - cron: '0 1,6,12 * * *'  # 北京 09,14,20
   workflow_dispatch:
-    inputs:
-      accounts:
-        description: '账号配置 (JSON 格式，可选，不填则使用 secrets.ACCOUNTS)'
-        required: false
-        type: string
-        default: ''
 
 jobs:
-  checkin:
+  read-posts:
     permissions:
       id-token: write
       contents: read
@@ -85,22 +83,19 @@ jobs:
         restore-keys: |
           storage-state-
 
-    - name: 恢复余额历史缓存
+    - name: 恢复帖子ID缓存
       uses: actions/cache/restore@v4
       with:
         path: |
-          balance_hash.txt
-        key: balance-hash-${{ hashFiles('balance_hash.txt') }}
+          linuxdo_reads
+        key: linuxdo-reads-${{ hashFiles('linuxdo_reads/*.txt') }}
         restore-keys: |
-          balance-hash-
-            
-    - name: 执行签到
+          linuxdo-reads-
+
+    - name: 执行阅读帖子
       env:
-        ACCOUNTS: ${{ inputs.accounts || secrets.ACCOUNTS }}
-        ACCOUNTS_LINUX_DO: ${{ secrets.ACCOUNTS_LINUX_DO }}
-        ACCOUNTS_GITHUB: ${{ secrets.ACCOUNTS_GITHUB }}
-        PROVIDERS: ${{ secrets.PROVIDERS }}
-        PROXY: ${{secrets.PROXY}}
+        ACCOUNTS: ${{ secrets.ACCOUNTS_LINUX_DO }}
+        LINUXDO_BASE_TOPIC_ID: ${{ secrets.LINUXDO_BASE_TOPIC_ID }}
         DINGDING_WEBHOOK: ${{ secrets.DINGDING_WEBHOOK }}
         EMAIL_USER: ${{ secrets.EMAIL_USER }}
         EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
@@ -111,22 +106,15 @@ jobs:
         FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
         WEIXIN_WEBHOOK: ${{ secrets.WEIXIN_WEBHOOK }}
       run: |
-        # 列出 storage-states 目录文件
-        if (Test-Path "storage-states") {
-          echo "📁 storage-states 目录内容:"
-          echo "绝对路径: $(Resolve-Path storage-states)"
-          echo ""
-          echo "所有文件:"
-          Get-ChildItem -Path storage-states -File | ForEach-Object { echo "  - $($_.Name)" }
-          echo ""
-          echo "详细信息:"
-          Get-ChildItem -Path storage-states -File | Format-Table Name, Length, LastWriteTime -AutoSize
-          echo "文件总数: $((Get-ChildItem -Path storage-states -File).Count)"
+        # 列出 linuxdo_reads 目录文件
+        if (Test-Path "linuxdo_reads") {
+          echo "📁 linuxdo_reads 目录内容:"
+          Get-ChildItem -Path linuxdo_reads -File | ForEach-Object { echo "  - $($_.Name)" }
         } else {
-          echo "⚠️ storage-states 目录不存在"
+          echo "⚠️ linuxdo_reads 目录不存在"
         }
-        # 执行签到
-        uv run python -u main.py
+        # 执行阅读帖子
+        uv run python -u linuxdo_read_posts.py
 
     - name: 保存登录状态缓存
       if: hashFiles('storage-states/*.json') != ''
@@ -136,19 +124,19 @@ jobs:
           storage-states
         key: storage-state-${{ hashFiles('storage-states/*.json') }}
 
-    - name: 保存余额历史缓存
-      if: hashFiles('balance_hash.txt') != ''
+    - name: 保存帖子ID缓存
+      if: hashFiles('linuxdo_reads/*.txt') != ''
       uses: actions/cache/save@v4
       with:
         path: |
-          balance_hash.txt
-        key: balance-hash-${{ hashFiles('balance_hash.txt') }}
+          linuxdo_reads
+        key: linuxdo-reads-${{ hashFiles('linuxdo_reads/*.txt') }}
 
     - name: 保存日志
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: artifacts-${{ github.run_number }}
+        name: linuxdo-read-artifacts-${{ github.run_number }}
         path: |
           logs/
           screenshots/
@@ -158,5 +146,5 @@ jobs:
     - name: 执行结果
       if: always()
       run: |
-        echo "签到任务执行完成"
+        echo "阅读帖子任务执行完成"
         echo "时间: $(Get-Date)"
