@@ -548,11 +548,12 @@ async def main():
     # 发送通知
     if results:
         notification_lines = [
-            f'🕒 Execution time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}',
+            f'🕒 执行时间: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}',
             "",
         ]
 
         total_read_count = 0
+        has_failure = False
         for r in results:
             username = r["username"]
             duration = r["duration"]
@@ -562,18 +563,28 @@ async def main():
                 last_topic_id = r["result"].get("last_topic_id", "unknown")
                 topic_url = f"https://linux.do/t/topic/{last_topic_id}"
                 notification_lines.append(
-                    f"✅ {username}: Read {read_count} posts ({duration})\n" f"   Last topic: {topic_url}"
+                    f"✅ {username}: 已阅读 {read_count} 篇帖子 ({duration})\n" f"   最后帖子: {topic_url}"
                 )
             else:
-                error = r["result"].get("error", "Unknown error")
-                notification_lines.append(f"❌ {username}: {error} ({duration})")
+                has_failure = True
+                error = r["result"].get("error", "未知错误")
+                # 检查是否是代理相关错误
+                if "proxy" in error.lower() or "connection" in error.lower() or "timeout" in error.lower():
+                    notification_lines.append(f"❌ {username}: 代理连接失败 - {error} ({duration})")
+                else:
+                    notification_lines.append(f"❌ {username}: {error} ({duration})")
 
         # 添加阅读总数
         notification_lines.append("")
-        notification_lines.append(f"📊 Total read: {total_read_count} posts")
+        notification_lines.append(f"📊 总计阅读: {total_read_count} 篇帖子")
+
+        # 添加失败提示
+        if has_failure:
+            notification_lines.append("")
+            notification_lines.append("⚠️ 部分账号执行失败，请检查代理配置或网络连接")
 
         notify_content = "\n".join(notification_lines)
-        notify.push_message("Linux.do Read Posts", notify_content, msg_type="text")
+        notify.push_message("Linux.do 阅读帖子", notify_content, msg_type="text")
 
 
 def run_main():
