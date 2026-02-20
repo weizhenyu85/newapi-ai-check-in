@@ -152,6 +152,7 @@ jobs:
         path: |
           logs/
           screenshots/
+          storage-states/*_provider_session.json
         if-no-files-found: ignore
         retention-days: 7
 

@@ -56,6 +56,35 @@ class CheckIn:
 
         os.makedirs(self.storage_state_dir, exist_ok=True)
 
+    def save_provider_session(self, cookies: dict, api_user: str | int, auth_method: str, username_hash: str) -> None:
+        """保存 provider 的 session cookies 到本地文件
+
+        Args:
+            cookies: provider cookies 字典 (如 {"session": "xxx", ...})
+            api_user: API 用户 ID
+            auth_method: 认证方式标识 (如 "linuxdo", "github")
+            username_hash: 用户名哈希 (用于区分不同 OAuth 账号)
+        """
+        from datetime import datetime
+
+        session_file = os.path.join(
+            self.storage_state_dir,
+            f"{self.provider_config.name}_{auth_method}_{username_hash}_provider_session.json",
+        )
+        session_data = {
+            "cookies": cookies,
+            "api_user": str(api_user),
+            "provider": self.provider_config.name,
+            "origin": self.provider_config.origin,
+            "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        try:
+            with open(session_file, "w", encoding="utf-8") as f:
+                json.dump(session_data, f, ensure_ascii=False, indent=2)
+            print(f"✅ {self.account_name}: Provider session saved to {session_file}")
+        except Exception as e:
+            print(f"⚠️ {self.account_name}: Failed to save provider session: {e}")
+
     async def get_waf_cookies_with_browser(self) -> dict | None:
         """使用 Camoufox 获取 WAF cookies（隐私模式）"""
         print(
@@ -1294,6 +1323,9 @@ class CheckIn:
                 user_cookies = result_data["cookies"]
                 api_user = result_data["api_user"]
 
+                # 保存 provider session cookies
+                self.save_provider_session(user_cookies, api_user, "linuxdo", username_hash)
+
                 # 如果 OAuth 登录返回了 browser_headers，用它更新 common_headers
                 updated_headers = common_headers.copy()
                 if oauth_browser_headers:
@@ -1341,6 +1373,10 @@ class CheckIn:
                                 print(
                                     f"ℹ️ {self.account_name}: Extracted {len(user_cookies)} user cookies: {list(user_cookies.keys())}"
                                 )
+
+                                # 保存 provider session cookies
+                                self.save_provider_session(user_cookies, api_user, "linuxdo", username_hash)
+
                                 merged_cookies = {**bypass_cookies, **user_cookies}
                                 return await self.check_in_with_cookies(merged_cookies, updated_headers, api_user, impersonate)
                             else:
