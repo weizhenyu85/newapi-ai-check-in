@@ -9,30 +9,10 @@ on:
   workflow_dispatch:
 
 jobs:
-  prepare:
-    runs-on: ubuntu-latest
-    environment: production
-    outputs:
-      matrix: ${{ steps.set-matrix.outputs.matrix }}
-    steps:
-    - name: 生成账号矩阵
-      id: set-matrix
-      env:
-        ACCOUNTS: ${{ secrets.ACCOUNTS_LINUX_DO }}
-      run: |
-        python3 << 'PYEOF'
-        import json, os
-        accounts = json.loads(os.environ['ACCOUNTS'])
-        matrix = json.dumps({"index": list(range(len(accounts)))})
-        print(f"Generated matrix: {matrix}")
-        with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-            f.write(f"matrix={matrix}\n")
-        PYEOF
-
   read-posts:
-    needs: prepare
     strategy:
-      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+      matrix:
+        index: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
       fail-fast: false
     permissions:
       id-token: write

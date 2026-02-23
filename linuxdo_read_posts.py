@@ -486,7 +486,7 @@ async def main():
             print(f"ℹ️ ACCOUNT_INDEX={idx}, only processing account: {accounts[idx]['username']}")
             accounts = [accounts[idx]]
         else:
-            print(f"❌ ACCOUNT_INDEX={idx} out of range (total: {len(accounts)})")
+            print(f"ℹ️ ACCOUNT_INDEX={idx} out of range (total: {len(accounts)}), skipping")
             return
 
     # 加载全局代理配置
