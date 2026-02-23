@@ -478,6 +478,17 @@ async def main():
 
     print(f"ℹ️ Found {len(accounts)} account(s) with linux.do configuration")
 
+    # 如果指定了 ACCOUNT_INDEX，只处理对应索引的账号（用于 matrix 并行）
+    account_index = os.getenv("ACCOUNT_INDEX")
+    if account_index is not None:
+        idx = int(account_index)
+        if 0 <= idx < len(accounts):
+            print(f"ℹ️ ACCOUNT_INDEX={idx}, only processing account: {accounts[idx]['username']}")
+            accounts = [accounts[idx]]
+        else:
+            print(f"❌ ACCOUNT_INDEX={idx} out of range (total: {len(accounts)})")
+            return
+
     # 加载全局代理配置
     global_proxy = None
     proxy_str = os.getenv("PROXY")

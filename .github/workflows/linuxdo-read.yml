@@ -9,7 +9,29 @@ on:
   workflow_dispatch:
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+    - name: 生成账号矩阵
+      id: set-matrix
+      env:
+        ACCOUNTS: ${{ secrets.ACCOUNTS_LINUX_DO }}
+      run: |
+        indices=$(echo "$ACCOUNTS" | python3 -c "
+        import json, sys
+        accounts = json.load(sys.stdin)
+        print(json.dumps(list(range(len(accounts)))))
+        ")
+        echo "matrix={\"index\":$indices}" >> $GITHUB_OUTPUT
+        echo "Generated matrix: $indices"
+
   read-posts:
+    needs: prepare
+    strategy:
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+      fail-fast: false
     permissions:
       id-token: write
       contents: read
@@ -79,8 +101,9 @@ jobs:
       with:
         path: |
           storage-states
-        key: storage-state-${{ hashFiles('storage-states/*.json') }}
+        key: storage-state-acc${{ matrix.index }}-${{ hashFiles('storage-states/*.json') }}
         restore-keys: |
+          storage-state-acc${{ matrix.index }}-
           storage-state-
 
     - name: 恢复帖子ID缓存
@@ -88,13 +111,15 @@ jobs:
       with:
         path: |
           linuxdo_reads
-        key: linuxdo-reads-${{ hashFiles('linuxdo_reads/*.txt') }}
+        key: linuxdo-reads-acc${{ matrix.index }}-${{ hashFiles('linuxdo_reads/*.txt') }}
         restore-keys: |
+          linuxdo-reads-acc${{ matrix.index }}-
           linuxdo-reads-
 
     - name: 执行阅读帖子
       env:
         ACCOUNTS: ${{ secrets.ACCOUNTS_LINUX_DO }}
+        ACCOUNT_INDEX: ${{ matrix.index }}
         PROXY: ${{ secrets.PROXY }}
         LINUXDO_BASE_TOPIC_ID: ${{ secrets.LINUXDO_BASE_TOPIC_ID }}
         DINGDING_WEBHOOK: ${{ secrets.DINGDING_WEBHOOK }}
@@ -109,14 +134,12 @@ jobs:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       run: |
-        # 列出 linuxdo_reads 目录文件
         if (Test-Path "linuxdo_reads") {
           echo "📁 linuxdo_reads 目录内容:"
           Get-ChildItem -Path linuxdo_reads -File | ForEach-Object { echo "  - $($_.Name)" }
         } else {
           echo "⚠️ linuxdo_reads 目录不存在"
         }
-        # 执行阅读帖子
         uv run python -u linuxdo_read_posts.py
 
     - name: 保存登录状态缓存
@@ -125,7 +148,7 @@ jobs:
       with:
         path: |
           storage-states
-        key: storage-state-${{ hashFiles('storage-states/*.json') }}
+        key: storage-state-acc${{ matrix.index }}-${{ hashFiles('storage-states/*.json') }}
 
     - name: 保存帖子ID缓存
       if: hashFiles('linuxdo_reads/*.txt') != ''
@@ -133,13 +156,13 @@ jobs:
       with:
         path: |
           linuxdo_reads
-        key: linuxdo-reads-${{ hashFiles('linuxdo_reads/*.txt') }}
+        key: linuxdo-reads-acc${{ matrix.index }}-${{ hashFiles('linuxdo_reads/*.txt') }}
 
     - name: 保存日志
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: linuxdo-read-artifacts-${{ github.run_number }}
+        name: linuxdo-read-artifacts-acc${{ matrix.index }}-${{ github.run_number }}
         path: |
           logs/
           screenshots/
@@ -149,5 +172,5 @@ jobs:
     - name: 执行结果
       if: always()
       run: |
-        echo "阅读帖子任务执行完成"
+        echo "账号 ${{ matrix.index }} 阅读帖子任务执行完成"
         echo "时间: $(Get-Date)"
