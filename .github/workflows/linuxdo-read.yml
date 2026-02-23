@@ -20,14 +20,14 @@ jobs:
       env:
         ACCOUNTS: ${{ secrets.ACCOUNTS_LINUX_DO }}
       run: |
-        python3 -c "
+        python3 << 'PYEOF'
         import json, os
         accounts = json.loads(os.environ['ACCOUNTS'])
-        matrix = json.dumps({'index': list(range(len(accounts)))})
-        print(f'Generated matrix: {matrix}')
-        with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-            f.write(f'matrix={matrix}\n')
-        "
+        matrix = json.dumps({"index": list(range(len(accounts)))})
+        print(f"Generated matrix: {matrix}")
+        with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+            f.write(f"matrix={matrix}\n")
+        PYEOF
 
   read-posts:
     needs: prepare
