@@ -17,8 +17,10 @@ jobs:
     steps:
     - name: 生成账号矩阵
       id: gen
+      env:
+        ACCOUNT_COUNT: ${{ vars.ACCOUNT_COUNT }}
       run: |
-        count=${{ vars.ACCOUNT_COUNT || 1 }}
+        count=${ACCOUNT_COUNT:-1}
         indices=$(python3 -c "import json; print(json.dumps(list(range($count))))")
         echo "matrix={\"index\":$indices}" >> $GITHUB_OUTPUT
         echo "Generated matrix for $count accounts: $indices"
