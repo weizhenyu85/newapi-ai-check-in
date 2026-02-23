@@ -11,6 +11,7 @@ on:
 jobs:
   prepare:
     runs-on: ubuntu-latest
+    environment: production
     outputs:
       matrix: ${{ steps.gen.outputs.matrix }}
     steps:
