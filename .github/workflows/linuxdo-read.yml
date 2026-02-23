@@ -19,9 +19,9 @@ jobs:
       env:
         ACCOUNTS: ${{ secrets.ACCOUNTS_LINUX_DO }}
       run: |
-        indices=$(echo "$ACCOUNTS" | python3 -c "
-        import json, sys
-        accounts = json.load(sys.stdin)
+        indices=$(python3 -c "
+        import json, os
+        accounts = json.loads(os.environ['ACCOUNTS'])
         print(json.dumps(list(range(len(accounts)))))
         ")
         echo "matrix={\"index\":$indices}" >> $GITHUB_OUTPUT
