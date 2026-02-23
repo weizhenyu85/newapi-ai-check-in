@@ -9,10 +9,23 @@ on:
   workflow_dispatch:
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.gen.outputs.matrix }}
+    steps:
+    - name: 生成账号矩阵
+      id: gen
+      run: |
+        count=${{ vars.ACCOUNT_COUNT || 1 }}
+        indices=$(python3 -c "import json; print(json.dumps(list(range($count))))")
+        echo "matrix={\"index\":$indices}" >> $GITHUB_OUTPUT
+        echo "Generated matrix for $count accounts: $indices"
+
   read-posts:
+    needs: prepare
     strategy:
-      matrix:
-        index: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49]
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
       fail-fast: false
     permissions:
       id-token: write
@@ -88,22 +101,11 @@ jobs:
           storage-state-acc${{ matrix.index }}-
           storage-state-
 
-    - name: 恢复帖子ID缓存
-      uses: actions/cache/restore@v4
-      with:
-        path: |
-          linuxdo_reads
-        key: linuxdo-reads-acc${{ matrix.index }}-${{ hashFiles('linuxdo_reads/*.txt') }}
-        restore-keys: |
-          linuxdo-reads-acc${{ matrix.index }}-
-          linuxdo-reads-
-
     - name: 执行阅读帖子
       env:
         ACCOUNTS: ${{ secrets.ACCOUNTS_LINUX_DO }}
         ACCOUNT_INDEX: ${{ matrix.index }}
         PROXY: ${{ secrets.PROXY }}
-        LINUXDO_BASE_TOPIC_ID: ${{ secrets.LINUXDO_BASE_TOPIC_ID }}
         DINGDING_WEBHOOK: ${{ secrets.DINGDING_WEBHOOK }}
         EMAIL_USER: ${{ secrets.EMAIL_USER }}
         EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
@@ -116,12 +118,6 @@ jobs:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       run: |
-        if (Test-Path "linuxdo_reads") {
-          echo "📁 linuxdo_reads 目录内容:"
-          Get-ChildItem -Path linuxdo_reads -File | ForEach-Object { echo "  - $($_.Name)" }
-        } else {
-          echo "⚠️ linuxdo_reads 目录不存在"
-        }
         uv run python -u linuxdo_read_posts.py
 
     - name: 保存登录状态缓存
@@ -131,14 +127,6 @@ jobs:
         path: |
           storage-states
         key: storage-state-acc${{ matrix.index }}-${{ hashFiles('storage-states/*.json') }}
-
-    - name: 保存帖子ID缓存
-      if: hashFiles('linuxdo_reads/*.txt') != ''
-      uses: actions/cache/save@v4
-      with:
-        path: |
-          linuxdo_reads
-        key: linuxdo-reads-acc${{ matrix.index }}-${{ hashFiles('linuxdo_reads/*.txt') }}
 
     - name: 保存日志
       if: always()

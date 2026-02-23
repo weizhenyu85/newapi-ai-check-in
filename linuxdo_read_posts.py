@@ -18,11 +18,14 @@ from utils.notify import notify
 # 默认缓存目录，与 checkin.py 保持一致
 DEFAULT_STORAGE_STATE_DIR = "storage-states"
 
-# 帖子起始 ID，从环境变量获取，默认 随机从100000-1100000选一个
-DEFAULT_BASE_TOPIC_ID = random.randint(1000000, 1100000)
-
 # 帖子 ID 缓存目录
 TOPIC_ID_CACHE_DIR = "linuxdo_reads"
+
+# 阅读配置
+MAX_SCROLL_TIME = 30  # 单篇帖子最大滚动时间（秒）
+MAX_POSTS_COUNT = 5000  # 跳过评论数超过此值的帖子
+BROWSE_TIME = 3600  # 连续浏览时间（秒），超过后休息
+REST_TIME = 300  # 休息时间（秒）
 
 
 class LinuxDoReadPosts:
@@ -52,9 +55,6 @@ class LinuxDoReadPosts:
 
         os.makedirs(self.storage_state_dir, exist_ok=True)
         os.makedirs(TOPIC_ID_CACHE_DIR, exist_ok=True)
-
-        # 每个用户独立的 topic_id 缓存文件
-        self.topic_id_cache_file = os.path.join(TOPIC_ID_CACHE_DIR, f"{self.username_hash}_topic_id.txt")
 
     async def _is_logged_in(self, page) -> bool:
         """检查是否已登录
@@ -149,43 +149,64 @@ class LinuxDoReadPosts:
             await take_screenshot(page, "login_error", self.username)
             return False
 
-    def _load_topic_id(self) -> int:
-        """从缓存文件读取上次的 topic_id
+    async def _fetch_topic_list(self, page, max_topics: int = 100) -> list[dict]:
+        """通过 API 获取帖子列表
 
-        Returns:
-            缓存的 topic_id，如果文件不存在则返回 0
-        """
-        try:
-            if os.path.exists(self.topic_id_cache_file):
-                with open(self.topic_id_cache_file, "r", encoding="utf-8") as f:
-                    content = f.read().strip()
-                    if content:
-                        return int(content)
-                    else:
-                        print(f"⚠️ {self.username}: Failed to load topic ID from cache, content is empty")
-        except (ValueError, IOError) as e:
-            print(f"⚠️ {self.username}: Failed to load topic ID from cache: {e}")
-        return 0
-
-    def _save_topic_id(self, topic_id: int) -> None:
-        """保存 topic_id 到缓存文件
+        先尝试获取未读帖子，如果没有则获取最新帖子。
+        过滤掉评论数过多的帖子。
 
         Args:
-            topic_id: 当前的 topic_id
-        """
-        try:
-            with open(self.topic_id_cache_file, "w", encoding="utf-8") as f:
-                f.write(str(topic_id))
-            print(f"ℹ️ {self.username}: Saved topic ID {topic_id} to cache")
-        except IOError as e:
-            print(f"⚠️ {self.username}: Failed to save topic ID: {e}")
+            page: Camoufox 页面对象（用于携带 cookie 发请求）
+            max_topics: 最大获取数量
 
-    async def _read_posts(self, page, base_topic_id: int, max_posts: int) -> tuple[int, int]:
+        Returns:
+            帖子列表 [{"id": int, "title": str, "posts_count": int}, ...]
+        """
+        topic_list = []
+
+        for endpoint in ["unread", "latest"]:
+            pg = 0
+            retry = 0
+            while len(topic_list) < max_topics and retry < 3:
+                try:
+                    url = f"https://linux.do/{endpoint}.json?no_definitions=true&page={pg}"
+                    data = await page.evaluate(
+                        f"""async () => {{
+                            const resp = await fetch("{url}");
+                            return await resp.json();
+                        }}"""
+                    )
+                    topics = data.get("topic_list", {}).get("topics", [])
+                    if not topics:
+                        break
+                    for t in topics:
+                        if t.get("posts_count", 0) < MAX_POSTS_COUNT:
+                            topic_list.append({
+                                "id": t["id"],
+                                "title": t.get("title", ""),
+                                "posts_count": t.get("posts_count", 0),
+                            })
+                    pg += 1
+                except Exception as e:
+                    print(f"⚠️ {self.username}: Failed to fetch {endpoint} page {pg}: {e}")
+                    retry += 1
+
+            if topic_list:
+                print(f"ℹ️ {self.username}: Got {len(topic_list)} topics from /{endpoint}")
+                break
+            else:
+                print(f"ℹ️ {self.username}: No topics from /{endpoint}, trying next...")
+
+        # 打乱顺序，避免多账号读同样的帖子
+        random.shuffle(topic_list)
+        return topic_list[:max_topics]
+
+    async def _read_posts(self, page, max_posts: int) -> tuple[int, int]:
         """浏览帖子
 
-        从 base_topic_id 开始，随机向上加 1-5 打开链接，
-        查找 class timeline-replies 标签判断帖子是否有效。
-        根据剩余可读数量自动滚动浏览。
+        通过 API 获取帖子列表，逐个打开并滚动浏览。
+        每篇帖子最多滚动 MAX_SCROLL_TIME 秒。
+        连续浏览 BROWSE_TIME 秒后休息 REST_TIME 秒。
 
         Args:
             page: Camoufox 页面对象
@@ -194,115 +215,83 @@ class LinuxDoReadPosts:
         Returns:
             (最后浏览的帖子ID, 实际阅读数量)
         """
-
-        # 从缓存文件读取上次的 topic_id
-        cached_topic_id = self._load_topic_id()
-
-        # 取环境变量和缓存中的最大值
-        current_topic_id = max(base_topic_id, cached_topic_id)
-        print(
-            f"ℹ️ {self.username}: Starting from topic ID {current_topic_id} "
-            f"(base: {base_topic_id}, cached: {cached_topic_id})"
-        )
+        topic_list = await self._fetch_topic_list(page, max_posts)
+        if not topic_list:
+            print(f"⚠️ {self.username}: No topics available to read")
+            return 0, 0
 
         read_count = 0
-        invalid_count = 0  # 连续无效帖子计数
+        last_topic_id = 0
+        browse_start = asyncio.get_event_loop().time()
 
-        while read_count < max_posts:
-            # 如果连续无效超过5次，跳过50-100个ID
-            if invalid_count >= 5:
-                jump = random.randint(50, 100)
-                current_topic_id += jump
-                print(f"⚠️ {self.username}: Too many invalid topics, jumping ahead by {jump} to {current_topic_id}")
-                invalid_count = 0
-            else:
-                # 随机向上加 1-5
-                current_topic_id += random.randint(1, 5)
+        for topic in topic_list:
+            if read_count >= max_posts:
+                break
 
-            topic_url = f"https://linux.do/t/topic/{current_topic_id}"
+            # 休息检查：连续浏览超过 BROWSE_TIME 秒后休息
+            elapsed = asyncio.get_event_loop().time() - browse_start
+            if elapsed >= BROWSE_TIME:
+                print(f"ℹ️ {self.username}: Browsed {int(elapsed)}s, resting {REST_TIME}s...")
+                await page.wait_for_timeout(REST_TIME * 1000)
+                browse_start = asyncio.get_event_loop().time()
+
+            topic_id = topic["id"]
+            topic_url = f"https://linux.do/t/topic/{topic_id}"
 
             try:
-                print(f"ℹ️ {self.username}: Opening topic {current_topic_id}...")
+                print(f"ℹ️ {self.username}: Opening topic {topic_id} ({topic.get('title', '')[:30]})...")
                 await page.goto(topic_url, wait_until="domcontentloaded")
-                await page.wait_for_timeout(3000)
+                await page.wait_for_timeout(random.randint(2000, 3000))
 
-                # 查找 timeline-replies 标签
+                # 检查帖子是否有效
                 timeline_element = await page.query_selector(".timeline-replies")
+                if not timeline_element:
+                    print(f"⚠️ {self.username}: Topic {topic_id} invalid, skipping")
+                    continue
 
-                if timeline_element:
-                    # 获取 innerText 解析当前页/总页数，格式为 "当前 / 总数"
-                    inner_text = await timeline_element.inner_text()
-                    print(f"✅ {self.username}: Topic {current_topic_id} - " f"Progress: {inner_text.strip()}")
+                inner_text = await timeline_element.inner_text()
+                print(f"✅ {self.username}: Topic {topic_id} - Progress: {inner_text.strip()}")
 
-                    # 解析页数信息并滚动浏览
-                    try:
-                        parts = inner_text.strip().split("/")
-                        if len(parts) == 2 and parts[0].strip().isdigit() and parts[1].strip().isdigit():
-                            current_page = int(parts[0].strip())
-                            total_pages = int(parts[1].strip())
+                # 滚动浏览，限时 MAX_SCROLL_TIME 秒
+                await self._scroll_to_read(page)
 
-                            # 有效帖子，重置无效计数
-                            invalid_count = 0
+                read_count += 1
+                last_topic_id = topic_id
 
-                            if current_page < total_pages:
-                                print(
-                                    f"ℹ️ {self.username}: Scrolling to read "
-                                    f"remaining {total_pages - current_page} pages..."
-                                )
-                                # 自动滚动浏览剩余内容
-                                await self._scroll_to_read(page)
+                # 模拟阅读间隔
+                await page.wait_for_timeout(random.randint(1000, 2000))
 
-                                read_count += total_pages - current_page
-                                remaining_read_count = max(0, max_posts - read_count)
-                                print(
-                                    f"ℹ️ {self.username}: {read_count} read, "
-                                    f"{remaining_read_count} remaining..."
-                                )
-                        else:
-                            print(f"⚠️ {self.username}: Timeline read error(content: {inner_text}), continue")
-                            invalid_count += 1
-                            continue
-                    except (ValueError, IndexError) as e:
-                        print(f"⚠️ {self.username}: Failed to parse progress: {e}")
-                        invalid_count += 1
-
-                    # 模拟阅读后等待
-                    await page.wait_for_timeout(random.randint(1000, 2000))
-                else:
-                    print(f"⚠️ {self.username}: Topic {current_topic_id} not found or invalid, skipping...")
-                    invalid_count += 1
+                if read_count % 20 == 0:
+                    print(f"ℹ️ {self.username}: Progress: {read_count}/{max_posts}")
 
             except Exception as e:
-                print(f"⚠️ {self.username}: Error reading topic {current_topic_id}: {e}")
-                invalid_count += 1
+                print(f"⚠️ {self.username}: Error reading topic {topic_id}: {e}")
 
-        # 保存当前 topic_id 到缓存
-        self._save_topic_id(current_topic_id)
-
-        return current_topic_id, read_count
+        return last_topic_id, read_count
 
     async def _scroll_to_read(self, page) -> None:
         """自动滚动浏览帖子内容
 
-        根据 timeline-replies 元素内容判断是否已到底部
+        限时 MAX_SCROLL_TIME 秒，到底或超时就停。
 
         Args:
             page: Camoufox 页面对象
         """
+        start_time = asyncio.get_event_loop().time()
         last_current_page = 0
-        last_total_pages = 0
 
         while True:
-            # 执行滚动
+            # 超时检查
+            if asyncio.get_event_loop().time() - start_time > MAX_SCROLL_TIME:
+                print(f"ℹ️ {self.username}: Scroll timeout ({MAX_SCROLL_TIME}s), moving on")
+                break
+
             await page.evaluate("window.scrollBy(0, window.innerHeight)")
+            await page.wait_for_timeout(random.randint(800, 2000))
 
-            # 每次滚动后等待 1-3 秒，模拟阅读
-            await page.wait_for_timeout(random.randint(1000, 3000))
-
-            # 检查 timeline-replies 内容判断是否到底
+            # 检查是否到底
             timeline_element = await page.query_selector(".timeline-replies")
             if not timeline_element:
-                print(f"ℹ️ {self.username}: Timeline element not found, stopping")
                 break
 
             inner_html = await timeline_element.inner_text()
@@ -312,23 +301,12 @@ class LinuxDoReadPosts:
                     current_page = int(parts[0].strip())
                     total_pages = int(parts[1].strip())
 
-                    # 如果滚动后页数没变，说明已经到底了
-                    if current_page == last_current_page and total_pages == last_total_pages:
-                        print(
-                            f"ℹ️ {self.username}: Page not changing " f"({current_page}/{total_pages}), reached bottom"
-                        )
-                        break
-
-                    # 如果当前页等于总页数，说明到底了
                     if current_page >= total_pages:
-                        print(f"ℹ️ {self.username}: Reached end " f"({current_page}/{total_pages}) after scrolling")
                         break
-
-                    # 缓存当前页数
+                    if current_page == last_current_page:
+                        break
                     last_current_page = current_page
-                    last_total_pages = total_pages
                 else:
-                    print(f"ℹ️ {self.username}: Timeline read error(content: {inner_html}), stopping")
                     break
             except (ValueError, IndexError):
                 pass
@@ -346,10 +324,6 @@ class LinuxDoReadPosts:
 
         # 缓存文件路径，与 checkin.py 保持一致
         cache_file_path = f"{self.storage_state_dir}/linuxdo_{self.username_hash}_storage_state.json"
-
-        # 从环境变量获取起始 ID
-        base_topic_id_str = os.getenv("LINUXDO_BASE_TOPIC_ID", "")
-        base_topic_id = int(base_topic_id_str) if base_topic_id_str else DEFAULT_BASE_TOPIC_ID
 
         async with AsyncCamoufox(
             headless=False,
@@ -388,7 +362,7 @@ class LinuxDoReadPosts:
 
                 # 浏览帖子
                 print(f"ℹ️ {self.username}: Starting to read posts...")
-                last_topic_id, read_count = await self._read_posts(page, base_topic_id, max_posts)
+                last_topic_id, read_count = await self._read_posts(page, max_posts)
 
                 print(f"✅ {self.username}: Successfully read {read_count} posts")
                 return True, {
