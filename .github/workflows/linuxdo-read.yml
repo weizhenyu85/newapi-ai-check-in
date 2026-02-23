@@ -20,13 +20,14 @@ jobs:
       env:
         ACCOUNTS: ${{ secrets.ACCOUNTS_LINUX_DO }}
       run: |
-        indices=$(python3 -c "
+        python3 -c "
         import json, os
         accounts = json.loads(os.environ['ACCOUNTS'])
-        print(json.dumps(list(range(len(accounts)))))
-        ")
-        echo "matrix={\"index\":$indices}" >> $GITHUB_OUTPUT
-        echo "Generated matrix: $indices"
+        matrix = json.dumps({'index': list(range(len(accounts)))})
+        print(f'Generated matrix: {matrix}')
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+            f.write(f'matrix={matrix}\n')
+        "
 
   read-posts:
     needs: prepare
